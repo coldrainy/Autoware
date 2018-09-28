@@ -56,18 +56,21 @@ import rospy
 import std_msgs.msg
 from std_msgs.msg import Bool
 from decimal import Decimal
-from autoware_msgs.msg import ConfigRcnn
 from autoware_msgs.msg import ConfigSsd
 from autoware_msgs.msg import ConfigCarDpm
 from autoware_msgs.msg import ConfigPedestrianDpm
 from autoware_msgs.msg import ConfigNdt
 from autoware_msgs.msg import ConfigNdtMapping
+from autoware_msgs.msg import ConfigApproximateNdtMapping
 from autoware_msgs.msg import ConfigNdtMappingOutput
 from autoware_msgs.msg import ConfigICP
 from autoware_msgs.msg import ConfigVoxelGridFilter
 from autoware_msgs.msg import ConfigRingFilter
 from autoware_msgs.msg import ConfigDistanceFilter
 from autoware_msgs.msg import ConfigRandomFilter
+from autoware_msgs.msg import ConfigRingGroundFilter
+from autoware_msgs.msg import ConfigRayGroundFilter
+from autoware_msgs.msg import ConfigWaypointLoader
 from autoware_msgs.msg import ConfigWaypointFollower
 from autoware_msgs.msg import ConfigTwistFilter
 from autoware_msgs.msg import ConfigVelocitySet
@@ -103,7 +106,7 @@ SCHED_RR = 2
 PROC_MANAGER_SOCK="/tmp/autoware_proc_manager"
 
 class MyFrame(rtmgr.MyFrame):
-		
+
 
 
 	def __init__(self, *args, **kwds):
@@ -376,11 +379,21 @@ class MyFrame(rtmgr.MyFrame):
 		tab = self.tab_topics
 		self.all_tabs.append(tab)
 
+                #
+                # for State tab
+                #
+                tab = self.tab_states
+                self.all_tabs.append(tab)
+
+                self.state_dic = self.load_yaml('state.yaml')
+                self.mainstate_dic = self.state_dic["mainstate"]
+                self.substate_dic = self.state_dic["substate"]
+
 		#
 		# for All
 		#
 		self.bitmap_logo.Destroy()
-		bm = scaled_bitmap(wx.Bitmap(rtmgr_src_dir() + 'autoware_logo_1.png'), 0.2)
+		bm = scaled_bitmap(wx.Bitmap(rtmgr_src_dir() + 'images/autoware_logo_1.png'), 0.2)
 		self.bitmap_logo = wx.StaticBitmap(self, wx.ID_ANY, bm)
 
 		rtmgr.MyFrame.__do_layout(self)
@@ -392,7 +405,7 @@ class MyFrame(rtmgr.MyFrame):
 			[ [ self.obj_get('button_{}_{}'.format(bn, tn)) for tn in tab_names ] for bn in btn_names ] )
 
 		self.alias_grps = new_btn_grps( ('rosbag', 'rviz', 'rqt') )
-		self.alias_grps += new_btn_grps( ('android_tablet', 'oculus_rift', 'vehicle_gateway', 'auto_pilot'),
+		self.alias_grps += new_btn_grps( ('android_tablet', 'oculus_rift', 'vehicle_gateway', 'remote_control', 'auto_pilot'),
 						 ('qs', 'interface') )
 		for grp in self.alias_grps:
 			wx.CallAfter(self.alias_sync, get_top(grp))
@@ -482,11 +495,11 @@ class MyFrame(rtmgr.MyFrame):
 				subprocess.call([ 'mkdir', '-p', path ])
 
 		# icon
-		bm = scaled_bitmap(wx.Bitmap(rtmgr_src_dir() + 'autoware_logo_2_white.png'), 0.5)
+		bm = scaled_bitmap(wx.Bitmap(rtmgr_src_dir() + 'images/autoware_logo_2_white.png'), 0.5)
 		icon = wx.EmptyIcon()
 		icon.CopyFromBitmap(bm)
 		self.SetIcon(icon)
-	
+
 
 		wx.CallAfter( self.boot_booted_cmds )
 
@@ -732,7 +745,8 @@ class MyFrame(rtmgr.MyFrame):
 		grp = { self.button_statchk_d : 1,
 			self.button_statchk_r : 2,
 			self.button_statchk_b : 3,
-			self.button_statchk_n : 4 }
+			self.button_statchk_n : 4,
+                       self.button_statchk_p : 5 }
 		self.radio_action(event, grp.keys())
 		v = grp.get(event.GetEventObject())
 		if v is not None:
@@ -759,8 +773,8 @@ class MyFrame(rtmgr.MyFrame):
 		v = obj.GetValue()
 		pub = rospy.Publisher('mode_cmd', mode_cmd, queue_size=10)
 		pub.publish(mode_cmd(mode=v))
-	
-	
+
+
 
 	def radio_action(self, event, grp):
 		push = event.GetEventObject()
@@ -1165,7 +1179,7 @@ class MyFrame(rtmgr.MyFrame):
 		self.OnChecked_obj(event.GetEventObject())
 
 	def OnRosbagRecord(self, event):
-		self.dlg_rosbag_record.Show()
+		self.dlg_rosbag_record.show()
 		obj = event.GetEventObject()
 		set_val(obj, False)
 
@@ -1695,6 +1709,23 @@ class MyFrame(rtmgr.MyFrame):
 
 			if self.checkbox_topics_echo.GetValue():
 				wx.CallAfter(append_tc_limit, tc, s, rm_chars)
+        #
+        # State Tabs
+        #
+        def getStateId(self, s_text):
+                if(self.mainstate_dic.has_key(s_text)):
+                    return self.mainstate_dic[s_text]
+                elif(self.substate_dic.has_key(s_text)):
+                    return self.substate_dic[s_text]
+                else :
+                    return -99
+
+        def OnState(self, event):
+                pub = rospy.Publisher('state_cmd', std_msgs.msg.Int32, queue_size=10)
+                msg = std_msgs.msg.Int32()
+                clicked_event = event.GetEventObject()
+                msg.data = self.getStateId(clicked_event.GetLabel())
+                pub.publish(msg)
 
 	#
 	# Common Utils
@@ -1920,7 +1951,7 @@ class MyFrame(rtmgr.MyFrame):
 					self.new_link(item, name, pdic, gdic, pnl, 'app', items.get('param'), add_objs)
 				else:
 					self.add_cfg_info(item, item, name, None, gdic, False, None)
-				szr = sizer_wrap(add_objs, wx.HORIZONTAL, parent=pnl)
+				szr = sizer_wrap(add_objs, wx.HORIZONTAL, flag=wx.ALIGN_CENTER_VERTICAL, parent=pnl)
 				szr.Fit(pnl)
 				tree.SetItemWindow(item, pnl)
 
@@ -1932,6 +1963,8 @@ class MyFrame(rtmgr.MyFrame):
 		lkc = None
 		if 'no_link' not in gdic.get('flags', []):
 			lkc = wx.HyperlinkCtrl(pnl, wx.ID_ANY, link_str, "")
+			if hasattr(lkc, 'SetCanFocus'):
+				lkc.SetCanFocus(False)
 			fix_link_color(lkc)
 			self.Bind(wx.EVT_HYPERLINK, self.OnHyperlinked, lkc)
 			if len(add_objs) > 0:
@@ -2370,8 +2403,8 @@ class VarPanel(wx.Panel):
 
 		if self.has_slider or self.kind == 'num':
 			vszr = wx.BoxSizer(wx.VERTICAL)
-			vszr.Add( self.create_bmbtn("inc.png", self.OnIncBtn) )
-			vszr.Add( self.create_bmbtn("dec.png", self.OnDecBtn) )
+			vszr.Add( self.create_bmbtn("images/inc.png", self.OnIncBtn) )
+			vszr.Add( self.create_bmbtn("images/dec.png", self.OnDecBtn) )
 			szr.Add(vszr, 0, wx.ALIGN_CENTER_VERTICAL)
 
 		self.SetSizer(szr)
@@ -2683,6 +2716,32 @@ class MyDialogNdtMapping(rtmgr.MyDialogNdtMapping):
 		self.panel.detach_func()
 		self.EndModal(0)
 
+class MyDialogWaypointLoader(rtmgr.MyDialogWaypointLoader):
+	def __init__(self, *args, **kwds):
+		self.pdic = kwds.pop('pdic')
+		self.pdic_bak = self.pdic.copy()
+		self.gdic = kwds.pop('gdic')
+		self.prm = kwds.pop('prm')
+		rtmgr.MyDialogWaypointLoader.__init__(self, *args, **kwds)
+		set_size_gdic(self)
+
+		parent = self.panel_v
+		frame = self.GetParent()
+		self.panel = ParamPanel(parent, frame=frame, pdic=self.pdic, gdic=self.gdic, prm=self.prm)
+		sizer_wrap((self.panel,), wx.VERTICAL, 1, wx.EXPAND, 0, parent)
+
+		self.klass_msg = Bool
+		self.pub = rospy.Publisher('/config/waypoint_loader_output', self.klass_msg, queue_size=10)
+
+	def OnCsvOutput(self, event):
+		msg = self.klass_msg()
+		msg.data = True
+		self.pub.publish(msg)
+
+	def OnOk(self, event):
+		self.panel.detach_func()
+		self.EndModal(0)
+
 class InfoBarLabel(wx.BoxSizer):
 	def __init__(self, parent, btm_txt=None, lmt_bar_prg=90, bar_orient=wx.VERTICAL):
 		wx.BoxSizer.__init__(self, orient=wx.VERTICAL)
@@ -2903,6 +2962,9 @@ class MyDialogRosbagRecord(rtmgr.MyDialogRosbagRecord):
 			self.cbs.append(obj)
 		szr.Layout()
 		panel.SetVirtualSize(szr.GetMinSize())
+
+	def show(self):
+		self.Show()
 		self.update_filename()
 
 	def update_filename(self):
@@ -2910,7 +2972,7 @@ class MyDialogRosbagRecord(rtmgr.MyDialogRosbagRecord):
 		path = tc.GetValue()
 		(dn, fn) = os.path.split(path)
 		now = datetime.datetime.now()
-		fn = 'autoware-%04d%02d%02d%02d%02d%02d.rosbag' % (
+		fn = 'autoware-%04d%02d%02d%02d%02d%02d' % (
 			now.year, now.month, now.day, now.hour, now.minute, now.second)
 		path = os.path.join(dn, fn)
 		set_path(tc, path)
@@ -3348,7 +3410,7 @@ def set_scheduling_policy(proc, policy, priority):
 		"priority": priority,
 	}
 	return send_to_proc_manager(order)
-	
+
 # psutil 3.x to 1.x backward compatibility
 def get_cpu_count():
 	try:

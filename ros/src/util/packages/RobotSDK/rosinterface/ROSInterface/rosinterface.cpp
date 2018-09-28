@@ -28,8 +28,7 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "rosinterface.h"
-#include "rosinterface_moc.cpp"
+#include "rosinterface/rosinterface.h"
 
 //using namespace RobotSDK;
 
